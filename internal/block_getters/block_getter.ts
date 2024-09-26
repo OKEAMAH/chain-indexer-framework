@@ -13,14 +13,14 @@ import { Logger } from "../logger/logger.js";
  * 
  * @author - Vibhu Rajeev, Nitin Mittal
  */
-export class BlockGetter extends BlockFormatter implements IBlockGetter { 
+export class BlockGetter extends BlockFormatter implements IBlockGetter {
     /**
      * @param {Eth} eth - Eth module from web3.js
      * @param {number} maxRetries - The number of times to retry on errors.
      * 
      * @constructor
      */
-    constructor(protected eth: Eth, protected maxRetries: number = 0) { 
+    constructor(protected eth: Eth, protected maxRetries: number = 0) {
         super();
     }
 
@@ -46,25 +46,50 @@ export class BlockGetter extends BlockFormatter implements IBlockGetter {
      * 
      * @throws {Error} - Throws error object on failure.
      */
-    public async getBlockWithTransactionReceipts(blockNumber: number | string): Promise<IBlock> {
-        const block: BlockTransactionObject = await this.eth.getBlock(blockNumber, true);
-        Logger.debug(`Fetching transaction receipts for the following block ${block.number}`);
+    public async getBlockWithTransactionReceipts(blockNumber: number | string, errorCount: number = 0): Promise<IBlock> {
+        try {
+            const block: BlockTransactionObject = await this.eth.getBlock(blockNumber, true);
 
-        const transactions: ITransaction[] = [];
+            if (!block) {
+                throw new BlockProducerError(
+                    "Block producer error",
+                    BlockProducerError.codes.RECEIPT_NOT_FOUND,
+                    true,
+                    `null receipt found for block ${blockNumber}.`,
+                    "remote"
+                );
+            }
 
-        for (const transactionObject of block.transactions) {
-            transactions.push(
-                this.formatTransactionObject(
-                    transactionObject as IWeb3Transaction,
-                    await this.getTransactionReceipt(transactionObject.hash)
-                )
+            Logger.debug(`Fetching transaction receipts for the following block ${block.number}`);
+
+            const transactions: ITransaction[] = [];
+
+            for (const transactionObject of block.transactions) {
+                transactions.push(
+                    this.formatTransactionObject(
+                        transactionObject as IWeb3Transaction,
+                        await this.getTransactionReceipt(transactionObject.hash)
+                    )
+                );
+            }
+
+            return this.formatBlockWithTransactions(
+                block,
+                transactions
             );
-        }
+        } catch (error) {
+            if (errorCount > this.maxRetries) {
+                Logger.info({
+                    location: "block_getter",
+                    function: "getBlockWithTransactionReceipts",
+                    errorCount,
+                    error: JSON.stringify(error)
+                });
+                throw error;
+            }
 
-        return this.formatBlockWithTransactions(
-            block,
-            transactions
-        );
+            return await this.getBlockWithTransactionReceipts(blockNumber, errorCount + 1);
+        }
     }
 
     /**
@@ -107,11 +132,17 @@ export class BlockGetter extends BlockFormatter implements IBlockGetter {
 
             return this.formatTransactionReceipt(transactionReceipt);
         } catch (error) {
-            if (errorCount >= this.maxRetries) {
+            if (errorCount > this.maxRetries) {
+                Logger.info({
+                    location: "block_getter",
+                    function: "getTransactionReceipt",
+                    errorCount,
+                    error: JSON.stringify(error)
+                });
                 throw error;
             }
 
-            return this.getTransactionReceipt(transactionHash, errorCount + 1);
+            return await this.getTransactionReceipt(transactionHash, errorCount + 1);
         }
     }
 }
