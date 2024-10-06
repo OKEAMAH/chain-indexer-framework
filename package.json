@@ -59,7 +59,7 @@
     "web3-eth-contract": "^1.8.1",
     "web3-utils": "^1.8.2",
     "winston": "^3.8.2",
-    "winston-transport-sentry-node": "^2.7.0"
+    "winston-transport-sentry-node": "^2.7.1"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.19.1",
